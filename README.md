@@ -1,5 +1,9 @@
 # ThePyTrader 🚀
 
+
+![Project Logo](images/logo.png)
+
+
 **ThePyTrader** es una herramienta en Python para calcular y analizar una cartera de inversión a partir de movimientos de **compras y ventas**, enriquecer la información con **tickers**, obtener **precios actualizados**, calcular **rendimiento y ganancia**, y finalmente **persistir las posiciones abiertas en una base de datos**.
 
 ---
