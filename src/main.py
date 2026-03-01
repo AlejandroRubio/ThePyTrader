@@ -1,8 +1,7 @@
 import sys
 
-from integrations.investing_scrapper import obtener_cotizacion
 from services.price_manager import test_yfnance, obtener_ultimos_precios_cartera
-from services.wallet_manager import obtener_acciones_compras_df, obtener_acciones_ventas_df, calcular_cartera_actual, resumir_cartera_por_accion, anadir_ticker_desde_json, calcular_rendimiento_y_ganancia_por_accion, imprimir_resumen_cartera, eliminar_acciones, insertar_posiciones_abiertas, limpiar_rendimiento
+from services.wallet_manager import obtener_acciones_compras_df, obtener_acciones_ventas_df, calcular_cartera_actual, resumir_cartera_por_accion, anadir_ticker_desde_json, calcular_rendimiento_y_ganancia_por_accion, imprimir_resumen_cartera, eliminar_acciones, insertar_posiciones_abiertas
 from utils.file_utils import csv_to_json
 
 PATH_URLS_INVESTING = '../datasets/investing_urls/default.csv'

@@ -274,7 +274,7 @@ def calcular_rendimiento_y_ganancia_por_accion(
     )
 
     # Limpieza del rendimiento
-    out["rendimiento_pct"] = df["rendimiento_pct"].fillna(0)
+    out["rendimiento_pct"] = out["rendimiento_pct"].fillna(0)
 
     return out
 
