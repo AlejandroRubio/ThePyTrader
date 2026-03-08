@@ -1,10 +1,6 @@
-# acciones_repo.py
-
 from datetime import datetime
 import pandas as pd
 import numpy as np
-from pathlib import Path
-import json
 from sqlalchemy import create_engine
 from urllib.parse import quote_plus
 from sqlalchemy import text
@@ -29,9 +25,9 @@ odbc_str = (
 )
 
 engine = create_engine(
-    "mssql+pyodbc:///?odbc_connect=" + quote_plus(odbc_str),
-    fast_executemany=True
+    "mssql+pyodbc:///?odbc_connect=" + quote_plus(odbc_str), fast_executemany=True
 )
+
 
 def obtener_acciones_compras_df() -> pd.DataFrame | None:
     """
@@ -81,8 +77,6 @@ def obtener_acciones_ventas_df() -> pd.DataFrame | None:
             conn.close()
 
 
-
-
 def calcular_cartera_actual(df_compras, df_ventas):
     # Ordenar por fecha para asegurar FIFO
     df_compras = df_compras.sort_values(by="fecha").copy()
@@ -118,7 +112,6 @@ def calcular_cartera_actual(df_compras, df_ventas):
     return cartera_final
 
 
-
 def resumir_cartera_por_accion(df: pd.DataFrame) -> pd.DataFrame:
     """
     Agrupa una cartera de acciones por 'accion' y calcula:
@@ -144,20 +137,14 @@ def resumir_cartera_por_accion(df: pd.DataFrame) -> pd.DataFrame:
     # Importe total por operación
     df["importe"] = df["numero_acciones"] * df["valor_accion"]
 
-    resumen = (
-        df
-        .groupby("accion", as_index=False)
-        .agg(
-            total_acciones=("numero_acciones", "sum"),
-            total_comision=("comision", "sum"),
-            importe_total=("importe", "sum")
-        )
+    resumen = df.groupby("accion", as_index=False).agg(
+        total_acciones=("numero_acciones", "sum"),
+        total_comision=("comision", "sum"),
+        importe_total=("importe", "sum"),
     )
 
     # Precio medio ponderado
-    resumen["precio_medio"] = (
-        resumen["importe_total"] / resumen["total_acciones"]
-    )
+    resumen["precio_medio"] = resumen["importe_total"] / resumen["total_acciones"]
 
     # Limpieza
     resumen = resumen.drop(columns="importe_total")
@@ -165,50 +152,55 @@ def resumir_cartera_por_accion(df: pd.DataFrame) -> pd.DataFrame:
     return resumen
 
 
-
-def anadir_ticker_desde_json(
-    df: pd.DataFrame,
-    col_accion: str = "accion",
-    col_ticker: str = "ticker"
-) -> pd.DataFrame:
+def anadir_ticker_desde_bd(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Añade una columna con el ticker a un DataFrame usando un JSON de mapeo.
+    Añade una columna con el ticker a un DataFrame usando una tabla de SQL Server.
 
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame origen (debe contener la columna `col_accion`)
-    ruta_json : str | Path
-        Ruta al fichero JSON {accion: ticker}
-    col_accion : str
-        Nombre de la columna de acciones
-    col_ticker : str
-        Nombre de la columna ticker a crear
-
+    connection_string : str
+        Cadena de conexión SQLAlchemy para SQL Server.
+        Ejemplo:
+        'mssql+pyodbc://usuario:password@servidor/basedatos?driver=ODBC+Driver+17+for+SQL+Server'
     Returns
     -------
     pd.DataFrame
         DataFrame con la nueva columna `col_ticker`
     """
 
+    col_accion = "accion"
+    col_ticker = "ticker"
+
+    if col_accion not in df.columns:
+        raise ValueError(f"La columna '{col_accion}' no existe en el DataFrame.")
+
     # Copia defensiva
     df_out = df.copy()
 
-    # Cargar mapeo
-    ruta_json = Path(JSON_TICKERS)
-    with ruta_json.open("r", encoding="utf-8") as f:
-        accion_a_ticker: dict[str, str] = json.load(f)
+    # Leer mapeo desde SQL Server
+    query = f"""
+        SELECT
+            nombre_empresa AS accion,
+            ticker AS ticker
+        FROM dbo.info_tickers
+    """
+
+    df_mapeo = pd.read_sql(query, engine)
+
+    # Convertir a diccionario
+    accion_a_ticker = dict(zip(df_mapeo["accion"], df_mapeo["ticker"]))
 
     # Mapear
     df_out[col_ticker] = df_out[col_accion].map(accion_a_ticker)
 
     # Aviso opcional si faltan tickers
-    faltantes = df_out[df_out[col_ticker].isna()][col_accion].unique()
+    faltantes = df_out[df_out[col_ticker].isna()][col_accion].dropna().unique()
     if len(faltantes) > 0:
-        print(f"⚠️ Acciones sin ticker en el JSON: {list(faltantes)}")
+        print(f"⚠️ Acciones sin ticker en la BD: {list(faltantes)}")
 
     return df_out
-
 
 
 def calcular_rendimiento_y_ganancia_por_accion(
@@ -219,7 +211,7 @@ def calcular_rendimiento_y_ganancia_por_accion(
     col_ultimo_precio: str = "ultimo_precio",
     col_comision: str = "total_comision",
     incluir_comisiones: bool = True,
-    devolver_df: bool = True
+    devolver_df: bool = True,
 ) -> pd.DataFrame:
     """
     Calcula por acción:
@@ -252,7 +244,9 @@ def calcular_rendimiento_y_ganancia_por_accion(
         out[c] = pd.to_numeric(out[c], errors="coerce")
 
     if incluir_comisiones and col_comision in out.columns:
-        out[col_comision] = pd.to_numeric(out[col_comision], errors="coerce").fillna(0.0)
+        out[col_comision] = pd.to_numeric(out[col_comision], errors="coerce").fillna(
+            0.0
+        )
     else:
         # si no se incluyen o no existe columna, tratamos comisión como 0
         out[col_comision] = 0.0
@@ -262,7 +256,9 @@ def calcular_rendimiento_y_ganancia_por_accion(
     out["valor_actual"] = out[col_total_acciones] * out[col_ultimo_precio]
 
     # P&L / total ganado
-    out["total_ganado"] = (out[col_ultimo_precio] - out[col_precio_medio]) * out[col_total_acciones]
+    out["total_ganado"] = (out[col_ultimo_precio] - out[col_precio_medio]) * out[
+        col_total_acciones
+    ]
     if incluir_comisiones:
         out["total_ganado"] = out["total_ganado"] - out[col_comision]
 
@@ -270,7 +266,7 @@ def calcular_rendimiento_y_ganancia_por_accion(
     out["rendimiento_pct"] = np.where(
         out["coste_total"].abs() > 0,
         (out["total_ganado"] / out["coste_total"]) * 100.0,
-        np.nan
+        np.nan,
     )
 
     # Limpieza del rendimiento
@@ -283,7 +279,7 @@ def imprimir_resumen_cartera(
     df: pd.DataFrame,
     col_coste_total: str = "coste_total",
     col_valor_actual: str = "valor_actual",
-    col_total_ganado: str = "total_ganado"
+    col_total_ganado: str = "total_ganado",
 ) -> None:
     """
     Imprime el resumen global de la cartera:
@@ -301,7 +297,9 @@ def imprimir_resumen_cartera(
     # Asegurar numéricos
     coste_total = pd.to_numeric(df[col_coste_total], errors="coerce").fillna(0).sum()
     valor_actual = pd.to_numeric(df[col_valor_actual], errors="coerce").fillna(0).sum()
-    beneficio_total = pd.to_numeric(df[col_total_ganado], errors="coerce").fillna(0).sum()
+    beneficio_total = (
+        pd.to_numeric(df[col_total_ganado], errors="coerce").fillna(0).sum()
+    )
 
     print("📊 RESUMEN GLOBAL DE LA CARTERA")
     print("-" * 35)
@@ -311,9 +309,7 @@ def imprimir_resumen_cartera(
 
 
 def eliminar_acciones(
-    df: pd.DataFrame,
-    acciones_a_excluir: Iterable[str],
-    col_accion: str = "accion"
+    df: pd.DataFrame, acciones_a_excluir: Iterable[str], col_accion: str = "accion"
 ) -> pd.DataFrame:
     """
     Elimina del DataFrame las filas cuya acción esté en el listado indicado.
@@ -348,7 +344,6 @@ def eliminar_acciones(
     return df_out
 
 
-
 def insertar_posiciones_abiertas(df: pd.DataFrame):
     """
     Inserta un DataFrame en la tabla dbo.posiciones_abiertas usando SQLAlchemy
@@ -360,19 +355,21 @@ def insertar_posiciones_abiertas(df: pd.DataFrame):
         conn.execute(text("DELETE FROM dbo.posiciones_abiertas"))
 
     # 2️⃣ Preparar dataframe para SQL
-    df_sql = pd.DataFrame({
-        "id": df["ticker"],
-        "accion": df["accion"],
-        "numero_acciones": df["total_acciones"],
-        "fecha_compra": datetime.now(),
-        "valor_compra": df["precio_medio"],
-        "comision_compra": df["total_comision"],
-        "total_compra": df["coste_total"],
-        "fecha_actual": datetime.now(),
-        "valor_actual": df["ultimo_precio"],
-        "total_actual": df["valor_actual"],
-        "ultima_variacion": df["rendimiento_pct"]
-    })
+    df_sql = pd.DataFrame(
+        {
+            "id": df["ticker"],
+            "accion": df["accion"],
+            "numero_acciones": df["total_acciones"],
+            "fecha_compra": datetime.now(),
+            "valor_compra": df["precio_medio"],
+            "comision_compra": df["total_comision"],
+            "total_compra": df["coste_total"],
+            "fecha_actual": datetime.now(),
+            "valor_actual": df["ultimo_precio"],
+            "total_actual": df["valor_actual"],
+            "ultima_variacion": df["rendimiento_pct"],
+        }
+    )
 
     # 3️⃣ Insertar
     df_sql.to_sql(
@@ -380,6 +377,5 @@ def insertar_posiciones_abiertas(df: pd.DataFrame):
         con=engine,
         schema="dbo",
         if_exists="append",
-        index=False
+        index=False,
     )
-

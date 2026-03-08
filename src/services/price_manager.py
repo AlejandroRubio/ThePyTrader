@@ -2,10 +2,6 @@ import pandas as pd
 import yfinance as yf
 
 
-import pandas as pd
-import yfinance as yf
-
-
 def obtener_ultimos_precios_cartera(
     df: pd.DataFrame,
     col_ticker: str = "ticker",
