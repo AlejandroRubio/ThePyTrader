@@ -1,2 +1,11 @@
 datafiles/
 venv/
+
+# Python compilados
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+
+# Logs
+*.log
