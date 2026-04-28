@@ -1,14 +1,11 @@
 from sqlalchemy import create_engine
 from urllib.parse import quote_plus
-
-driver = "ODBC Driver 17 for SQL Server"
-server = r"AlexPC\SQLEXPRESS"
-database = "INFO_BURSATIL"
+from parametrization import DB_DRIVER, DB_SERVER, DB_NAME
 
 odbc_str = (
-    f"DRIVER={{{driver}}};"
-    f"SERVER={server};"
-    f"DATABASE={database};"
+    f"DRIVER={{{DB_DRIVER}}};"
+    f"SERVER={DB_SERVER};"
+    f"DATABASE={DB_NAME};"
     "Trusted_Connection=yes;"
 )
 

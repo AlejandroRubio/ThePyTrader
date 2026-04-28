@@ -2,6 +2,9 @@ import sys
 
 from services.metal_manager import procesado_metales_completo
 from services.wallet_manager import procesado_cartera_completo
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 def mostrar_menu():
     print("\n--- MENÚ PRINCIPAL ---")
@@ -12,7 +15,7 @@ def mostrar_menu():
 
 def main() -> int:
 
-    print("Iniciando ThePyTrader 🚀")
+    logger.info("Iniciando ThePyTrader")
     
     while True:
         mostrar_menu()
@@ -23,7 +26,7 @@ def main() -> int:
         elif opcion == "2":
             procesado_metales_completo()
         elif opcion == "0":
-            print("Saliendo del programa")
+            logger.info("Saliendo del programa")
             break
         else:
             print("Opción no válida, intenta de nuevo.")

@@ -1,5 +1,8 @@
 import pandas as pd
 import yfinance as yf
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def obtener_ultimos_precios_cartera(
@@ -94,4 +97,4 @@ def test_yfnance():
     ticker = yf.Ticker("SAN.MC")
     # Obtener histórico de últimos 5 días
     hist = ticker.history(period="5d")
-    print(hist)
+    logger.debug("\n%s", hist)

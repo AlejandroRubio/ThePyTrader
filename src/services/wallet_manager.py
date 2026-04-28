@@ -5,9 +5,10 @@ from sqlalchemy import text
 from typing import Iterable
 from services.db_manager import get_database_engine
 from services.price_manager import obtener_ultimos_precios_cartera
+from parametrization import ACCIONES_EXCLUIDAS
+from logger import get_logger
 
-
-JSON_TICKERS = "C:\\Labs\\ThePyTrader\\datasets\\tickers_mapping.json"
+logger = get_logger(__name__)
 
 engine = get_database_engine()
 
@@ -24,11 +25,11 @@ def obtener_acciones_compras_df() -> pd.DataFrame | None:
 
     try:
         df = pd.read_sql(query, engine)
-        print(f"Obtenidas un total de {len(df)} compras")
+        logger.info("Obtenidas un total de %d compras", len(df))
         return df
 
-    except Exception as e:
-        print("Error durante la conexión o la consulta:", e)
+    except Exception:
+        logger.exception("Error durante la conexión o la consulta")
         return None
 
     finally:
@@ -48,11 +49,11 @@ def obtener_acciones_ventas_df() -> pd.DataFrame | None:
 
     try:
         df = pd.read_sql(query, engine)
-        print(f"Obtenidas un total de {len(df)} ventas")
+        logger.info("Obtenidas un total de %d ventas", len(df))
         return df
 
-    except Exception as e:
-        print("Error durante la conexión o la consulta:", e)
+    except Exception:
+        logger.exception("Error durante la conexión o la consulta")
         return None
 
     finally:
@@ -181,7 +182,7 @@ def anadir_ticker_desde_bd(df: pd.DataFrame) -> pd.DataFrame:
     # Aviso opcional si faltan tickers
     faltantes = df_out[df_out[col_ticker].isna()][col_accion].dropna().unique()
     if len(faltantes) > 0:
-        print(f"⚠️ Acciones sin ticker en la BD: {list(faltantes)}")
+        logger.warning("Acciones sin ticker en la BD: %s", list(faltantes))
 
     return df_out
 
@@ -284,11 +285,11 @@ def imprimir_resumen_cartera(
         pd.to_numeric(df[col_total_ganado], errors="coerce").fillna(0).sum()
     )
 
-    print("📊 RESUMEN GLOBAL DE LA CARTERA")
-    print("-" * 35)
-    print(f"💰 Total invertido : {coste_total:,.2f}")
-    print(f"📈 Valor actual    : {valor_actual:,.2f}")
-    print(f"🏆 Beneficio total : {beneficio_total:,.2f}")
+    logger.info("RESUMEN GLOBAL DE LA CARTERA")
+    logger.info("-" * 35)
+    logger.info("Total invertido : %s", f"{coste_total:,.2f}")
+    logger.info("Valor actual    : %s", f"{valor_actual:,.2f}")
+    logger.info("Beneficio total : %s", f"{beneficio_total:,.2f}")
 
 
 def eliminar_acciones(
@@ -383,8 +384,7 @@ def procesado_cartera_completo():
     # Paso 4: Cálculo rendimiento
     df_final = calcular_rendimiento_y_ganancia_por_accion(df_con_precios)
 
-    acciones_a_quitar = ["BATS", "Diageo"]
-    df_final = eliminar_acciones(df_final, acciones_a_quitar)
+    df_final = eliminar_acciones(df_final, ACCIONES_EXCLUIDAS)
 
     # Paso 5: Impresion de datos 
     imprimir_resumen_cartera(df_final)

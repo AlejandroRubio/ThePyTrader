@@ -4,7 +4,9 @@ from sqlalchemy import create_engine, text
 from datetime import date
 
 from services.db_manager import get_database_engine
+from logger import get_logger
 
+logger = get_logger(__name__)
 
 engine = get_database_engine()
 
@@ -47,7 +49,7 @@ def obtener_metales_eur_oz_3y() -> pd.DataFrame:
         )
 
         if df.empty:
-            print(f"No hay datos para {metal}")
+            logger.warning("No hay datos para %s", metal)
             continue
 
         df = df.reset_index()
@@ -157,11 +159,11 @@ def insertar_metales_en_bd(df: pd.DataFrame):
                 "fecha_carga": row["fecha_carga"],
             })
 
-    print(f"✔ Insertadas/actualizadas {len(df_long)} filas")
+    logger.info("Insertadas/actualizadas %d filas", len(df_long))
 
 
 def procesado_metales_completo():
     metales_df = obtener_metales_eur_oz_3y() 
-    print(metales_df.head())
-    print(metales_df.tail())
+    logger.debug("\n%s", metales_df.head())
+    logger.debug("\n%s", metales_df.tail())
     insertar_metales_en_bd(metales_df)

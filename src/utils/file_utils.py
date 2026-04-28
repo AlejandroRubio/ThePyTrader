@@ -1,18 +1,22 @@
 import pandas as pd
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 def csv_to_json(file_path):
     # Cargar el CSV con detección de separador automático; ajustar si es necesario
     try:
         data = pd.read_csv(file_path, sep=';')
     except Exception as e:
-        print(f"Error al leer el archivo: {e}")
+        logger.exception("Error al leer el archivo")
         return
     
     # Renombrar las columnas para claridad
     if len(data.columns) == 2:
         data.columns = ['Company', 'URL']
     else:
-        print("Formato de archivo no esperado")
+        logger.error("Formato de archivo no esperado")
         return
     
     # Eliminar posibles espacios en blanco en los nombres de las compañías y las URLs
