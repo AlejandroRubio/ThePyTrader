@@ -39,7 +39,7 @@ def obtener_acciones_compras_df() -> pd.DataFrame | None:
 
 def obtener_acciones_ventas_df() -> pd.DataFrame | None:
     """
-    Devuelve un DataFrame con todo el contenido de dbo.acciones_compras.
+    Devuelve un DataFrame con todo el contenido de dbo.acciones_ventas.
     """
     conn = None
 
@@ -370,16 +370,20 @@ def procesado_cartera_completo():
     compras = obtener_acciones_compras_df()
     ventas = obtener_acciones_ventas_df()
 
+    if compras is None or ventas is None:
+        logger.error("No se pudieron obtener los datos de compras/ventas. Abortando.")
+        return
+
     # Paso 2: Procesamiento cartera
     # 2.1 Cálculo posiciones abiertas
     posiciones_abiertas = calcular_cartera_actual(compras, ventas)
     # 2.2 Agrupación por acción
     cartera = resumir_cartera_por_accion(posiciones_abiertas)
     # 2.3 Añadir tickers
-    cartera_con_tikcer = anadir_ticker_desde_bd(cartera)
+    cartera_con_ticker = anadir_ticker_desde_bd(cartera)
 
     # Paso 3: Obtención de cotizaciones
-    precios, df_con_precios = obtener_ultimos_precios_cartera(cartera_con_tikcer)
+    precios, df_con_precios = obtener_ultimos_precios_cartera(cartera_con_ticker)
 
     # Paso 4: Cálculo rendimiento
     df_final = calcular_rendimiento_y_ganancia_por_accion(df_con_precios)

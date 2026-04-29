@@ -123,7 +123,6 @@ def insertar_metales_en_bd(df: pd.DataFrame):
     # Convertir fecha a datetime.date
     df_long["fecha"] = pd.to_datetime(df_long["fecha"]).dt.date
 
-    # Ejecutar MERGE fila a fila
     merge_sql = text("""
         MERGE dbo.metales_cotizacion AS target
         USING (SELECT
@@ -148,16 +147,12 @@ def insertar_metales_en_bd(df: pd.DataFrame):
             VALUES (source.fecha, source.metal, source.precio, source.divisa, source.unidad, source.fecha_carga);
     """)
 
+    records = df_long.to_dict(orient="records")
+    for r in records:
+        r["precio"] = float(r["precio"])
+
     with engine.begin() as conn:
-        for _, row in df_long.iterrows():
-            conn.execute(merge_sql, {
-                "fecha": row["fecha"],
-                "metal": row["metal"],
-                "precio": float(row["precio"]),
-                "divisa": row["divisa"],
-                "unidad": row["unidad"],
-                "fecha_carga": row["fecha_carga"],
-            })
+        conn.execute(merge_sql, records)
 
     logger.info("Insertadas/actualizadas %d filas", len(df_long))
 
