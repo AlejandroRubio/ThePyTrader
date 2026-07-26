@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find . -maxdepth 3 -not -path '*/\\\\.git*' -not -path '*__pycache__*')",
+      "Bash(powershell -NoProfile -Command \"[System.Text.Encoding]::UTF8\")",
+      "Bash(xxd database/dbo.posiciones_abiertas.Table.sql)",
+      "Bash(file database/*.sql)",
+      "Bash(powershell -NoProfile -Command '$src = Get-Content -Raw -Path '\\\\''C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Labs-ThePyTrader\\\\77d960dc-f9c9-4103-ba30-81259fdbe700\\\\scratchpad\\\\posiciones_abiertas.sql'\\\\''; [System.IO.File]::WriteAllText\\('\\\\''c:\\\\Labs\\\\ThePyTrader\\\\database\\\\dbo.posiciones_abiertas.Table.sql'\\\\'', $src, [System.Text.Encoding]::Unicode\\)')",
+      "Bash(iconv -f UTF-16LE -t UTF-8 database/dbo.posiciones_abiertas.Table.sql)"
+    ]
+  }
+}

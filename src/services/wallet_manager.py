@@ -13,6 +13,17 @@ logger = get_logger(__name__)
 engine = get_database_engine()
 
 
+def _ajustar_valor_libras(df: pd.DataFrame) -> pd.DataFrame:
+    if "divisa" not in df.columns or "valor_accion" not in df.columns:
+        return df
+    mask = df["divisa"] == "Libra"
+    if mask.any():
+        df = df.copy()
+        df.loc[mask, "valor_accion"] /= 100
+        logger.info("Ajustados %d registros de Libra (peniques → libras)", mask.sum())
+    return df
+
+
 def obtener_acciones_compras_df() -> pd.DataFrame | None:
     """
     Devuelve un DataFrame con todo el contenido de dbo.acciones_compras.
@@ -25,6 +36,7 @@ def obtener_acciones_compras_df() -> pd.DataFrame | None:
 
     try:
         df = pd.read_sql(query, engine)
+        df = _ajustar_valor_libras(df)
         logger.info("Obtenidas un total de %d compras", len(df))
         return df
 
@@ -49,6 +61,7 @@ def obtener_acciones_ventas_df() -> pd.DataFrame | None:
 
     try:
         df = pd.read_sql(query, engine)
+        df = _ajustar_valor_libras(df)
         logger.info("Obtenidas un total de %d ventas", len(df))
         return df
 

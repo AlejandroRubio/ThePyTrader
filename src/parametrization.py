@@ -13,7 +13,7 @@ JSON_TICKERS_PATH = os.getenv(
 
 # Cartera
 _acciones_env = os.getenv("ACCIONES_EXCLUIDAS")
-ACCIONES_EXCLUIDAS = _acciones_env.split(",") if _acciones_env else ["BATS", "Diageo"]
+ACCIONES_EXCLUIDAS = _acciones_env.split(",") if _acciones_env else ["BATS", "Diageo", "JEQP"]
 
 # Logging
 LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper())

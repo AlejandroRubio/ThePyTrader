@@ -31,7 +31,7 @@ def obtener_metales_eur_oz_3y() -> pd.DataFrame:
     series = []
 
     # Tipo de cambio EUR/USD
-    fx = yf.download("EURUSD=X", period="3y", interval="1d", progress=False)
+    fx = yf.download("EURUSD=X", period="6y", interval="1d", progress=False)
     fx = fx.reset_index()
 
     if isinstance(fx.columns, pd.MultiIndex):
@@ -42,7 +42,7 @@ def obtener_metales_eur_oz_3y() -> pd.DataFrame:
     for metal, ticker in symbols.items():
         df = yf.download(
             ticker,
-            period="3y",
+            period="6y",
             interval="1d",
             progress=False,
             auto_adjust=False
