@@ -1,16 +1,17 @@
 import sys
 
 from services.metal_manager import procesado_metales_completo
-from services.wallet_manager import procesado_cartera_completo
+from services.wallet_manager import procesado_cartera_completo, detalle_operaciones_por_accion
 from logger import get_logger
 
 logger = get_logger(__name__)
 
 def mostrar_menu():
-    print("\n--- MENÚ PRINCIPAL ---")
-    print("1. Procesamiento cartera")
-    print("2. Procesamiento precios metales")
-    print("0. Salir")
+    logger.info("\n--- MENÚ PRINCIPAL ---")
+    logger.info("1. Procesamiento cartera")
+    logger.info("2. Procesamiento precios metales")
+    logger.info("3. Detalle de operaciones por acción")
+    logger.info("0. Salir")
 
 
 def main() -> int:
@@ -25,11 +26,15 @@ def main() -> int:
             procesado_cartera_completo()
         elif opcion == "2":
             procesado_metales_completo()
+        elif opcion == "3":
+            nombre_accion = input("Introduce el nombre de la acción: ").strip()
+            broker = input("Introduce el broker: ").strip()
+            detalle_operaciones_por_accion(nombre_accion, broker)
         elif opcion == "0":
             logger.info("Saliendo del programa")
             break
         else:
-            print("Opción no válida, intenta de nuevo.")
+            logger.info("Opción no válida, intenta de nuevo.")
         
     return 0
 

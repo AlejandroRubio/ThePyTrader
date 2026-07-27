@@ -5,10 +5,7 @@ from parametrization import LOG_LEVEL, LOG_FILE
 
 def _setup_logging():
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-    fmt = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    fmt = logging.Formatter("%(message)s")
     root = logging.getLogger()
     root.setLevel(LOG_LEVEL)
     if not root.handlers:

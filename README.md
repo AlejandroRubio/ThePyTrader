@@ -8,7 +8,7 @@
 
 ---
 
-## ✨ Funcionalidad principal
+## ✨ Funcionalidad 1: Procesamiento cartera
 
 El flujo de ejecución del proyecto es el siguiente:
 
@@ -21,6 +21,28 @@ El flujo de ejecución del proyecto es el siguiente:
 7. Cálculo de rendimiento y ganancia
 8. Impresión de resultados
 9. Inserción de posiciones abiertas en base de datos
+
+---
+
+## 💰 Funcionalidad 2: Procesamiento precios metales
+
+El flujo de ejecución de esta opción es el siguiente:
+
+1. Descarga del histórico diario (6 años) de oro, plata y cobre, junto con el tipo de cambio EUR/USD, vía yfinance
+2. Conversión de los precios a EUR/onza troy (con ajuste específico para el cobre, cotizado originalmente en USD/libra)
+3. Inserción/actualización (upsert) del histórico en la tabla `metales_cotizacion`
+
+---
+
+## 🔍 Funcionalidad 3: Detalle de operaciones por acción
+
+El flujo de ejecución de esta opción es el siguiente:
+
+1. Solicitud al usuario del nombre de la acción y del broker a consultar
+2. Obtención desde base de datos de las compras (`acciones_compras`) y ventas (`acciones_ventas`) de esa acción para el broker indicado
+3. Aplicación del algoritmo FIFO para emparejar cada venta con el/los lote/s de compra correspondientes (de más antiguo a más reciente)
+4. Prorrateo de la comisión de compra según el bloque de acciones consumido de cada lote
+5. Impresión del detalle por venta: lotes de compra utilizados, acciones asignadas, precio de compra y comisión de compra prorrateada
 
 ---
 

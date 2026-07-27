@@ -378,6 +378,89 @@ def insertar_posiciones_abiertas(df: pd.DataFrame):
     )
 
 
+def detalle_operaciones_por_accion(nombre_accion: str, broker: str) -> None:
+    """
+    Muestra el detalle FIFO de las ventas de una acción en un broker concreto,
+    indicando qué lotes de compra (posiblemente de varias fechas) cubren cada
+    venta, con la comisión de compra prorrateada según el bloque de acciones
+    consumido.
+
+    Se exige el broker como criterio de búsqueda porque la misma acción puede
+    tener posiciones independientes (y por tanto FIFO independientes) en
+    distintos brokers.
+    """
+    compras = obtener_acciones_compras_df()
+    ventas = obtener_acciones_ventas_df()
+
+    if compras is None or ventas is None:
+        logger.info("No se pudieron obtener los datos de compras/ventas. Abortando.")
+        return
+
+    nombre_normalizado = nombre_accion.strip().casefold()
+    broker_normalizado = broker.strip().casefold()
+
+    filtro_compras = (compras["accion"].str.strip().str.casefold() == nombre_normalizado) & (
+        compras["broker"].str.strip().str.casefold() == broker_normalizado
+    )
+    filtro_ventas = (ventas["accion"].str.strip().str.casefold() == nombre_normalizado) & (
+        ventas["broker"].str.strip().str.casefold() == broker_normalizado
+    )
+    lotes = compras[filtro_compras].copy()
+    ventas_broker = ventas[filtro_ventas].copy()
+
+    if lotes.empty and ventas_broker.empty:
+        logger.info(f"No hay operaciones registradas para la acción '{nombre_accion}' en el broker '{broker}'.")
+        return
+
+    for col in ("numero_acciones", "valor_accion", "comision"):
+        lotes[col] = pd.to_numeric(lotes[col], errors="coerce")
+        ventas_broker[col] = pd.to_numeric(ventas_broker[col], errors="coerce")
+
+    lotes = lotes.sort_values("fecha")
+    lotes["acciones_restantes"] = lotes["numero_acciones"]
+    ventas_broker = ventas_broker.sort_values("fecha")
+
+    logger.info(f"=== {nombre_accion} - Broker: {broker} ===")
+
+    if ventas_broker.empty:
+        logger.info("Sin ventas registradas para este broker.")
+        return
+
+    for num_venta, (_, venta) in enumerate(ventas_broker.iterrows(), start=1):
+        acciones_pendientes = venta["numero_acciones"]
+
+        logger.info(
+            f"Venta {num_venta}: fecha_venta={venta['fecha']}, "
+            f"acciones_vendidas={venta['numero_acciones']}, valor_venta={venta['valor_accion']}, "
+            f"comision_venta={venta['comision']}, broker={broker}"
+        )
+        logger.info("  id_compra, fecha_compra, acciones_asignadas, valor_compra, comision_compra")
+
+        for idx, lote in lotes.iterrows():
+            if acciones_pendientes <= 0:
+                break
+            if lote["acciones_restantes"] <= 0:
+                continue
+
+            asignadas = min(lote["acciones_restantes"], acciones_pendientes)
+            proporcion = asignadas / lote["numero_acciones"]
+            comision_asignada = lote["comision"] * proporcion
+
+            logger.info(
+                f"  {lote['id']}, {lote['fecha']}, {asignadas}, "
+                f"{lote['valor_accion']}, {round(comision_asignada, 2)}"
+            )
+
+            lotes.at[idx, "acciones_restantes"] -= asignadas
+            acciones_pendientes -= asignadas
+
+        if acciones_pendientes > 0:
+            logger.info(
+                f"Venta {num_venta} de '{nombre_accion}' ({broker}) no puede cubrirse "
+                f"completamente: faltan {acciones_pendientes} acciones de compra"
+            )
+
+
 def procesado_cartera_completo():
      # Paso 1: Obtención datos origen: ventas y compras
     compras = obtener_acciones_compras_df()
