@@ -1,8 +1,16 @@
+from datetime import date, datetime, timedelta
+
 import pandas as pd
 import yfinance as yf
+from sqlalchemy import text
+
+from services.db_manager import get_database_engine
+from parametrization import TIPOS_CAMBIO_FECHA_INICIO, LISTADO_DIVISAS
 from logger import get_logger
 
 logger = get_logger(__name__)
+
+engine = get_database_engine()
 
 
 def obtener_ultimos_precios_cartera(
@@ -98,3 +106,92 @@ def test_yfnance():
     # Obtener histórico de últimos 5 días
     hist = ticker.history(period="5d")
     logger.debug("\n%s", hist)
+
+
+def obtener_tipos_cambio_divisas() -> pd.DataFrame:
+    """
+    Obtiene, para cada divisa de LISTADO_DIVISAS, el histórico diario del
+    tipo de cambio EUR -> divisa (divisa origen siempre EUR), desde
+    TIPOS_CAMBIO_FECHA_INICIO hasta hoy, usando yfinance.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columnas: fecha, divisa_origen, divisa_destino, tipo_cambio
+    """
+
+    fecha_inicio = datetime.strptime(TIPOS_CAMBIO_FECHA_INICIO, "%d/%m/%Y").date()
+    fecha_fin = date.today() + timedelta(days=1)  # 'end' de yfinance es exclusivo
+
+    resultados = []
+
+    for divisa in LISTADO_DIVISAS:
+        ticker = f"EUR{divisa}=X"
+
+        df = yf.download(
+            ticker,
+            start=fecha_inicio,
+            end=fecha_fin,
+            interval="1d",
+            progress=False,
+            auto_adjust=False,
+        )
+
+        if df.empty:
+            logger.warning("No hay datos de tipo de cambio para %s", divisa)
+            continue
+
+        df = df.reset_index()
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [col[0] for col in df.columns]
+
+        df = df[["Date", "Close"]].rename(columns={"Date": "fecha", "Close": "tipo_cambio"})
+        df["divisa_origen"] = "EUR"
+        df["divisa_destino"] = divisa
+
+        resultados.append(df[["fecha", "divisa_origen", "divisa_destino", "tipo_cambio"]])
+
+    if not resultados:
+        return pd.DataFrame(columns=["fecha", "divisa_origen", "divisa_destino", "tipo_cambio"])
+
+    return pd.concat(resultados, ignore_index=True)
+
+
+def insertar_tipos_cambio_en_bd(df: pd.DataFrame):
+    """
+    Inserta el histórico de tipos de cambio en dbo.historico_tipos_cambio.
+    """
+
+    if df.empty:
+        logger.warning("No hay tipos de cambio que insertar")
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE TABLE dbo.historico_tipos_cambio"))
+
+    df_sql = pd.DataFrame(
+        {
+            "fecha": pd.to_datetime(df["fecha"]).dt.date,
+            "divisa_origen": df["divisa_origen"],
+            "divisa_destino": df["divisa_destino"],
+            "tipo_cambio": df["tipo_cambio"],
+            "fecha_actualizacion": datetime.now(),
+        }
+    )
+
+    df_sql.to_sql(
+        name="historico_tipos_cambio",
+        con=engine,
+        schema="dbo",
+        if_exists="append",
+        index=False,
+    )
+
+    logger.info("Insertados %d registros de tipos de cambio", len(df_sql))
+
+
+def procesado_tipos_cambio_completo():
+    tipos_cambio_df = obtener_tipos_cambio_divisas()
+    logger.debug("\n%s", tipos_cambio_df.head())
+    insertar_tipos_cambio_en_bd(tipos_cambio_df)

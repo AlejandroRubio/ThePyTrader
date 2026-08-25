@@ -15,6 +15,10 @@ JSON_TICKERS_PATH = os.getenv(
 _acciones_env = os.getenv("ACCIONES_EXCLUIDAS")
 ACCIONES_EXCLUIDAS = _acciones_env.split(",") if _acciones_env else ["BATS", "Diageo", "JEQP"]
 
+# Tipos de cambio
+TIPOS_CAMBIO_FECHA_INICIO =  "01/01/2020"
+LISTADO_DIVISAS = ["USD", "GBP", "AUD"]
+
 # Logging
 LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper())
 LOG_FILE = os.getenv("LOG_FILE", r"C:\Labs\ThePyTrader\logs\thepytrader.log")
