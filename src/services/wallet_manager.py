@@ -79,16 +79,18 @@ def calcular_cartera_actual(df_compras, df_ventas):
     df_compras = df_compras.sort_values(by="fecha").copy()
     df_ventas = df_ventas.sort_values(by="fecha").copy()
 
-    # Agrupar ventas por acción
-    ventas_grouped = df_ventas.groupby("accion")["numero_acciones"].sum()
+    # Agrupar ventas por acción y broker (el FIFO debe ser independiente por
+    # broker, ya que una misma acción puede tener posiciones distintas en
+    # brokers distintos)
+    ventas_grouped = df_ventas.groupby(["accion", "broker"])["numero_acciones"].sum()
 
     # Copia del dataframe de compras para restar
     cartera = df_compras.copy()
 
-    # Procesar restas por acción
-    for accion, total_vendido in ventas_grouped.items():
-        # Filtrar compras de esa acción
-        mask = cartera["accion"] == accion
+    # Procesar restas por acción y broker
+    for (accion, broker), total_vendido in ventas_grouped.items():
+        # Filtrar compras de esa acción en ese broker
+        mask = (cartera["accion"] == accion) & (cartera["broker"] == broker)
         compras_accion = cartera[mask].copy()
 
         for idx, row in compras_accion.iterrows():
@@ -179,9 +181,9 @@ def anadir_ticker_desde_bd(df: pd.DataFrame) -> pd.DataFrame:
     # Leer mapeo desde SQL Server
     query = f"""
         SELECT
-            nombre_empresa AS accion,
-            ticker AS ticker
-        FROM dbo.info_tickers
+            accion ,
+            ticker 
+        FROM dbo.info_acciones_base
     """
 
     df_mapeo = pd.read_sql(query, engine)
