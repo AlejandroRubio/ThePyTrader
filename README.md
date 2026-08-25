@@ -143,12 +143,14 @@ Se pueden excluir acciones manualmente antes del cálculo final.
 Dentro de la carpeta database están los ficheros SQL con las tablas requeridas para almacenar los datos en BD:
 
 Tablas base:
-- acciones_compras
-- acciones_ventas
-- posiciones_abiertas
-- metales_cotizacion
-- historico_tipos_cambio
-- historico_cotizaciones_acciones
+- acciones_compras — histórico de compras de acciones (fecha, número de acciones, valor, comisión y broker)
+- acciones_ventas — histórico de ventas de acciones (misma estructura que `acciones_compras`)
+- posiciones_abiertas — snapshot de las posiciones abiertas actuales de la cartera (cantidad, precio medio, valor actual y rendimiento), recalculado en cada ejecución de la Funcionalidad 1
+- metales_cotizacion — histórico de cotizaciones de oro, plata y cobre en EUR/onza troy
+- historico_tipos_cambio — histórico diario de tipos de cambio EUR → divisa
+- historico_cotizaciones_acciones — histórico diario de cotización de cada acción
+- info_acciones_base — mapeo de cada acción a su ticker de mercado
+- info_acciones_tipologia — clasificación de cada acción (sector, subsector, país y estrategia)
 
 
 ---
