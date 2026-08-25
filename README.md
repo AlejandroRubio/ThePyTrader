@@ -66,6 +66,17 @@ El flujo de ejecución de esta opción es el siguiente:
 
 ---
 
+## 📊 Funcionalidad 6: Calcular histórico de cartera
+
+El flujo de ejecución de esta opción es el siguiente:
+
+1. Obtención de compras, ventas (vistas `acciones_compras_euro` / `acciones_venta_euro`, ya en EUR) y cotizaciones históricas (`historico_cotizaciones_acciones_euro`)
+2. Reconstrucción del ledger FIFO (qué lote de compra cubre cada venta, con fecha y comisiones prorrateadas)
+3. Cálculo, día a día desde `COTIZACIONES_FECHA_INICIO` hasta hoy, de la inversión y valoración de las posiciones abiertas y del beneficio realizado acumulado por las ventas
+4. Vaciado (truncate) e inserción del histórico diario resultante en la tabla `historico_rendimientos`
+
+---
+
 ## 🧱 Estructura del proyecto
 
 ```
@@ -149,6 +160,7 @@ Tablas base:
 - metales_cotizacion — histórico de cotizaciones de oro, plata y cobre en EUR/onza troy
 - historico_tipos_cambio — histórico diario de tipos de cambio EUR → divisa
 - historico_cotizaciones_acciones — histórico diario de cotización de cada acción
+- historico_rendimientos — histórico diario de inversión, valoración y beneficio (realizado y no realizado) de la cartera
 - info_acciones_base — mapeo de cada acción a su ticker de mercado
 - info_acciones_tipologia — clasificación de cada acción (sector, subsector, país y estrategia)
 

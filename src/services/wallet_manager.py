@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import date, datetime
 import pandas as pd
 import numpy as np
 from sqlalchemy import text
 from typing import Iterable
 from services.db_manager import get_database_engine
 from services.price_manager import obtener_ultimos_precios_cartera
-from parametrization import ACCIONES_EXCLUIDAS
+from parametrization import ACCIONES_EXCLUIDAS, COTIZACIONES_FECHA_INICIO
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -493,3 +493,296 @@ def procesado_cartera_completo():
 
     # Paso 6: Inserción BD posiciones abiertas
     insertar_posiciones_abiertas(df_final)
+
+
+def obtener_acciones_compras_euro_df() -> pd.DataFrame | None:
+    """
+    Devuelve las compras de acciones con el valor ya convertido a EUR
+    (vista dbo.acciones_compras_euro).
+    """
+    try:
+        df = pd.read_sql("SELECT * FROM dbo.acciones_compras_euro", engine)
+        logger.info("Obtenidas un total de %d compras (EUR)", len(df))
+        return df
+    except Exception:
+        logger.exception("Error durante la conexión o la consulta")
+        return None
+
+
+def obtener_acciones_ventas_euro_df() -> pd.DataFrame | None:
+    """
+    Devuelve las ventas de acciones con el valor ya convertido a EUR
+    (vista dbo.acciones_venta_euro).
+    """
+    try:
+        df = pd.read_sql("SELECT * FROM dbo.acciones_venta_euro", engine)
+        logger.info("Obtenidas un total de %d ventas (EUR)", len(df))
+        return df
+    except Exception:
+        logger.exception("Error durante la conexión o la consulta")
+        return None
+
+
+def obtener_historico_cotizaciones_euro_df() -> pd.DataFrame | None:
+    """
+    Devuelve el histórico de cotizaciones de acciones con el valor ya
+    convertido a EUR (vista dbo.historico_cotizaciones_acciones_euro).
+    """
+    try:
+        df = pd.read_sql(
+            "SELECT fecha, accion, valor_accion FROM dbo.historico_cotizaciones_acciones_euro",
+            engine,
+        )
+        logger.info("Obtenidas un total de %d cotizaciones históricas (EUR)", len(df))
+        return df
+    except Exception:
+        logger.exception("Error durante la conexión o la consulta")
+        return None
+
+
+def _construir_ledger_fifo(df_compras: pd.DataFrame, df_ventas: pd.DataFrame):
+    """
+    Recorre en orden cronológico las compras y ventas de cada (accion, broker)
+    aplicando FIFO y construye dos estructuras:
+
+    - lotes: una fila por lote de compra (accion, broker, fecha_compra,
+      numero_acciones original, valor_accion, comision).
+    - eventos_consumo: una fila por cada asignación de un lote de compra a
+      una venta, con las acciones consumidas, la fecha de venta, el valor de
+      venta y las comisiones (compra y venta) prorrateadas según el bloque
+      de acciones consumido.
+
+    A partir de estas dos estructuras se puede reconstruir el estado de la
+    cartera (posiciones abiertas y beneficio realizado) en cualquier fecha
+    pasada, considerando únicamente los eventos con fecha_venta anterior o
+    igual a la fecha de referencia.
+    """
+    compras = df_compras.sort_values("fecha").reset_index(drop=True).copy()
+    ventas = df_ventas.sort_values("fecha").reset_index(drop=True).copy()
+
+    compras["lote_id"] = compras.index
+    compras["acciones_restantes"] = compras["numero_acciones"]
+
+    lotes = compras[
+        ["lote_id", "accion", "broker", "fecha", "numero_acciones", "valor_accion", "comision"]
+    ].rename(columns={"fecha": "fecha_compra"})
+
+    eventos = []
+
+    for (accion, broker), ventas_grupo in ventas.groupby(["accion", "broker"]):
+        mask = (compras["accion"] == accion) & (compras["broker"] == broker)
+        lotes_grupo = compras[mask]
+
+        for _, venta in ventas_grupo.iterrows():
+            acciones_pendientes = venta["numero_acciones"]
+
+            for idx in lotes_grupo.index:
+                if acciones_pendientes <= 0:
+                    break
+
+                restantes = compras.at[idx, "acciones_restantes"]
+                if restantes <= 0:
+                    continue
+
+                asignadas = min(restantes, acciones_pendientes)
+                proporcion_compra = asignadas / compras.at[idx, "numero_acciones"]
+                proporcion_venta = asignadas / venta["numero_acciones"]
+
+                eventos.append(
+                    {
+                        "accion": accion,
+                        "broker": broker,
+                        "lote_id": compras.at[idx, "lote_id"],
+                        "fecha_compra": compras.at[idx, "fecha"],
+                        "valor_compra": compras.at[idx, "valor_accion"],
+                        "fecha_venta": venta["fecha"],
+                        "valor_venta": venta["valor_accion"],
+                        "acciones": asignadas,
+                        "comision_compra": compras.at[idx, "comision"] * proporcion_compra,
+                        "comision_venta": venta["comision"] * proporcion_venta,
+                    }
+                )
+
+                compras.at[idx, "acciones_restantes"] -= asignadas
+                acciones_pendientes -= asignadas
+
+    eventos_consumo = pd.DataFrame(
+        eventos,
+        columns=[
+            "accion", "broker", "lote_id", "fecha_compra", "valor_compra",
+            "fecha_venta", "valor_venta", "acciones", "comision_compra", "comision_venta",
+        ],
+    )
+
+    return lotes, eventos_consumo
+
+
+def _serie_acumulada_por_fecha(altas: pd.Series, bajas: pd.Series, fechas: pd.DatetimeIndex) -> pd.Series:
+    """
+    Combina altas (+) y bajas (-) indexadas por fecha en una única serie de
+    deltas diarios, calcula el acumulado cronológico y lo proyecta sobre el
+    rango completo de `fechas` (relleno hacia delante, empezando en 0).
+    """
+    deltas = altas.add(-bajas, fill_value=0.0) if not bajas.empty else altas
+    deltas.index = pd.to_datetime(deltas.index).normalize()
+    deltas = deltas.groupby(deltas.index).sum().sort_index()
+
+    acumulado = deltas.cumsum()
+    return acumulado.reindex(fechas, method="ffill").fillna(0.0)
+
+
+def _calcular_serie_invertido(lotes: pd.DataFrame, eventos: pd.DataFrame, fechas: pd.DatetimeIndex) -> pd.Series:
+    altas = (lotes["numero_acciones"] * lotes["valor_accion"]).groupby(lotes["fecha_compra"]).sum()
+    if eventos.empty:
+        bajas = pd.Series(dtype=float)
+    else:
+        bajas = (eventos["acciones"] * eventos["valor_compra"]).groupby(eventos["fecha_venta"]).sum()
+
+    return _serie_acumulada_por_fecha(altas, bajas, fechas)
+
+
+def _calcular_serie_beneficio_liquidado(eventos: pd.DataFrame, fechas: pd.DatetimeIndex) -> pd.Series:
+    if eventos.empty:
+        return pd.Series(0.0, index=fechas)
+
+    beneficio = (
+        (eventos["valor_venta"] - eventos["valor_compra"]) * eventos["acciones"]
+        - eventos["comision_compra"]
+        - eventos["comision_venta"]
+    )
+    altas = beneficio.groupby(eventos["fecha_venta"]).sum()
+    return _serie_acumulada_por_fecha(altas, pd.Series(dtype=float), fechas)
+
+
+def _calcular_serie_valorado(
+    lotes: pd.DataFrame, eventos: pd.DataFrame, df_cotizaciones: pd.DataFrame, fechas: pd.DatetimeIndex
+) -> pd.Series:
+    """
+    Para cada acción, valora las acciones en cartera día a día a su precio de
+    mercado (histórico, con forward-fill para días sin cotización). Si un día
+    no tiene ninguna cotización disponible (ni siquiera anterior), se usa como
+    valor de repuesto el precio medio de compra de las acciones que se tienen
+    en cartera ese día, de forma que la valoración nunca caiga a 0 solo por
+    falta de datos de mercado.
+    """
+    acciones = set(lotes["accion"].unique())
+
+    precios = df_cotizaciones.copy()
+    precios["fecha"] = pd.to_datetime(precios["fecha"]).dt.normalize()
+
+    total = pd.Series(0.0, index=fechas)
+
+    for accion in acciones:
+        lotes_accion = lotes.loc[lotes["accion"] == accion]
+        eventos_accion = eventos.loc[eventos["accion"] == accion] if not eventos.empty else eventos
+
+        altas_acciones = lotes_accion.groupby("fecha_compra")["numero_acciones"].sum()
+        altas_coste = (
+            (lotes_accion["numero_acciones"] * lotes_accion["valor_accion"])
+            .groupby(lotes_accion["fecha_compra"])
+            .sum()
+        )
+
+        if eventos_accion.empty:
+            bajas_acciones = pd.Series(dtype=float)
+            bajas_coste = pd.Series(dtype=float)
+        else:
+            bajas_acciones = eventos_accion.groupby("fecha_venta")["acciones"].sum()
+            bajas_coste = (
+                (eventos_accion["acciones"] * eventos_accion["valor_compra"])
+                .groupby(eventos_accion["fecha_venta"])
+                .sum()
+            )
+
+        acciones_en_cartera = _serie_acumulada_por_fecha(altas_acciones, bajas_acciones, fechas)
+        coste_en_cartera = _serie_acumulada_por_fecha(altas_coste, bajas_coste, fechas)
+
+        precio_medio_compra = (coste_en_cartera / acciones_en_cartera).replace(
+            [np.inf, -np.inf], 0.0
+        ).fillna(0.0)
+
+        precio_mercado = (
+            precios.loc[precios["accion"] == accion]
+            .drop_duplicates("fecha")
+            .set_index("fecha")["valor_accion"]
+            .reindex(fechas, method="ffill")
+        )
+
+        if precio_mercado.isna().all() and acciones_en_cartera.abs().sum() > 0:
+            logger.warning(
+                "Sin cotizaciones históricas para '%s': se usará el precio medio de compra como valor de mercado",
+                accion,
+            )
+
+        precio_final = precio_mercado.fillna(precio_medio_compra)
+
+        total += acciones_en_cartera * precio_final
+
+    return total
+
+
+def calcular_historico_cartera() -> pd.DataFrame:
+    """
+    Calcula, para cada día desde COTIZACIONES_FECHA_INICIO hasta hoy:
+    - total_invertido: coste de compra de las posiciones abiertas ese día
+    - total_valorado: valor de mercado (cotización histórica) de esas posiciones
+    - total_beneficio_liquidado: beneficio/pérdida acumulado de las ventas realizadas hasta ese día
+    - total_beneficio_no_liquidado: total_valorado - total_invertido
+    """
+    compras = obtener_acciones_compras_euro_df()
+    ventas = obtener_acciones_ventas_euro_df()
+    cotizaciones = obtener_historico_cotizaciones_euro_df()
+
+    if compras is None or ventas is None or cotizaciones is None:
+        logger.error("No se pudieron obtener los datos necesarios. Abortando.")
+        return pd.DataFrame()
+
+    lotes, eventos = _construir_ledger_fifo(compras, ventas)
+
+    fecha_inicio = datetime.strptime(COTIZACIONES_FECHA_INICIO, "%d/%m/%Y").date()
+    fecha_fin = date.today()
+    fechas = pd.date_range(start=fecha_inicio, end=fecha_fin, freq="D")
+
+    total_invertido = _calcular_serie_invertido(lotes, eventos, fechas)
+    total_beneficio_liquidado = _calcular_serie_beneficio_liquidado(eventos, fechas)
+    total_valorado = _calcular_serie_valorado(lotes, eventos, cotizaciones, fechas)
+    total_beneficio_no_liquidado = total_valorado - total_invertido
+
+    return pd.DataFrame(
+        {
+            "fecha": fechas,
+            "total_invertido": total_invertido.values,
+            "total_valorado": total_valorado.values,
+            "total_beneficio_liquidado": total_beneficio_liquidado.values,
+            "total_beneficio_no_liquidado": total_beneficio_no_liquidado.values,
+        }
+    )
+
+
+def insertar_historico_cartera_en_bd(df: pd.DataFrame):
+    """
+    Inserta el histórico diario de rendimiento de la cartera en
+    dbo.historico_rendimientos. Vacía la tabla antes de insertar.
+    """
+
+    if df.empty:
+        logger.warning("No hay histórico de cartera que insertar")
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE TABLE dbo.historico_rendimientos"))
+
+    df.to_sql(
+        name="historico_rendimientos",
+        con=engine,
+        schema="dbo",
+        if_exists="append",
+        index=False,
+    )
+
+    logger.info("Insertados %d registros de histórico de cartera", len(df))
+
+
+def procesado_historico_cartera_completo():
+    historico = calcular_historico_cartera()
+    insertar_historico_cartera_en_bd(historico)
