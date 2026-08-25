@@ -46,6 +46,26 @@ El flujo de ejecución de esta opción es el siguiente:
 
 ---
 
+## 💱 Funcionalidad 4: Obtener tipos de cambio
+
+El flujo de ejecución de esta opción es el siguiente:
+
+1. Descarga, para cada divisa configurada en `LISTADO_DIVISAS`, del histórico diario del tipo de cambio EUR → divisa (vía yfinance), desde la fecha `TIPOS_CAMBIO_FECHA_INICIO` hasta hoy
+2. Vaciado (truncate) de la tabla `historico_tipos_cambio`
+3. Inserción de todos los tipos de cambio obtenidos en dicha tabla
+
+---
+
+## 📈 Funcionalidad 5: Obtener histórico cotizaciones
+
+El flujo de ejecución de esta opción es el siguiente:
+
+1. Obtención del listado de acciones distintas presentes en `acciones_compras`, junto con su divisa y su ticker (desde `info_acciones_base`)
+2. Vaciado (truncate) de la tabla `historico_cotizaciones_acciones`
+3. Descarga, acción por acción, del histórico diario de cotización (vía yfinance) desde la fecha `COTIZACIONES_FECHA_INICIO` hasta hoy, insertando el resultado inmediatamente tras cada acción para que un fallo puntual no afecte a las acciones ya procesadas
+
+---
+
 ## 🧱 Estructura del proyecto
 
 ```
@@ -135,6 +155,9 @@ Tablas base:
 - acciones_compras
 - acciones_ventas
 - posiciones_abiertas
+- metales_cotizacion
+- historico_tipos_cambio
+- historico_cotizaciones_acciones
 
 
 ---

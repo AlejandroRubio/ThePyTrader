@@ -5,7 +5,7 @@ import yfinance as yf
 from sqlalchemy import text
 
 from services.db_manager import get_database_engine
-from parametrization import TIPOS_CAMBIO_FECHA_INICIO, LISTADO_DIVISAS
+from parametrization import TIPOS_CAMBIO_FECHA_INICIO, LISTADO_DIVISAS, COTIZACIONES_FECHA_INICIO
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -195,3 +195,129 @@ def procesado_tipos_cambio_completo():
     tipos_cambio_df = obtener_tipos_cambio_divisas()
     logger.debug("\n%s", tipos_cambio_df.head())
     insertar_tipos_cambio_en_bd(tipos_cambio_df)
+
+
+def obtener_acciones_compra_distintas() -> pd.DataFrame:
+    """
+    Devuelve las acciones distintas presentes en dbo.acciones_compras, con su
+    divisa (si está disponible en la tabla) y su ticker asociado en
+    dbo.info_acciones_base.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columnas: accion, divisa, ticker
+    """
+
+    df_compras = pd.read_sql("SELECT * FROM dbo.acciones_compras", engine)
+
+    if "divisa" in df_compras.columns:
+        df_acciones = df_compras.groupby("accion", as_index=False)["divisa"].first()
+    else:
+        df_acciones = pd.DataFrame({"accion": df_compras["accion"].unique()})
+        df_acciones["divisa"] = "EUR"
+
+    df_tickers = pd.read_sql("SELECT accion, ticker FROM dbo.info_acciones_base", engine)
+    accion_a_ticker = dict(zip(df_tickers["accion"], df_tickers["ticker"]))
+    df_acciones["ticker"] = df_acciones["accion"].map(accion_a_ticker)
+
+    faltantes = df_acciones[df_acciones["ticker"].isna()]["accion"].tolist()
+    if faltantes:
+        logger.warning("Acciones sin ticker en la BD, se omiten: %s", faltantes)
+
+    return df_acciones
+
+
+def insertar_historico_cotizaciones_en_bd(df: pd.DataFrame):
+    """
+    Inserta (append) el histórico de cotizaciones de una acción en
+    dbo.historico_cotizaciones_acciones.
+    """
+
+    if df.empty:
+        return
+
+    df_sql = pd.DataFrame(
+        {
+            "fecha": pd.to_datetime(df["fecha"]).dt.date,
+            "accion": df["accion"],
+            "ticker": df["ticker"],
+            "valor_accion": df["valor_accion"],
+            "divisa": df["divisa"],
+        }
+    )
+
+    df_sql.to_sql(
+        name="historico_cotizaciones_acciones",
+        con=engine,
+        schema="dbo",
+        if_exists="append",
+        index=False,
+    )
+
+
+def procesado_historico_cotizaciones_completo():
+    """
+    Obtiene el histórico diario de cotizaciones (desde COTIZACIONES_FECHA_INICIO
+    hasta hoy) de todas las acciones distintas de dbo.acciones_compras, e inserta
+    los resultados en dbo.historico_cotizaciones_acciones.
+
+    Se procesa acción a acción (truncando la tabla una única vez al principio),
+    de forma que si falla la obtención/inserción de una acción concreta, se
+    registra el error y se continúa con el resto sin perder lo ya insertado.
+    """
+
+    acciones = obtener_acciones_compra_distintas()
+
+    fecha_inicio = datetime.strptime(COTIZACIONES_FECHA_INICIO, "%d/%m/%Y").date()
+    fecha_fin = date.today() + timedelta(days=1)  # 'end' de yfinance es exclusivo
+
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE TABLE dbo.historico_cotizaciones_acciones"))
+
+    for _, fila in acciones.iterrows():
+        accion = fila["accion"]
+        ticker = fila["ticker"]
+        divisa = fila["divisa"]
+
+        if pd.isna(ticker) or not str(ticker).strip():
+            logger.warning("Acción '%s' sin ticker, se omite", accion)
+            continue
+
+        try:
+            df_hist = yf.download(
+                ticker,
+                start=fecha_inicio,
+                end=fecha_fin,
+                interval="1d",
+                progress=False,
+                auto_adjust=False,
+            )
+
+            if df_hist.empty:
+                logger.warning("Sin cotizaciones para '%s' (%s)", accion, ticker)
+                continue
+
+            df_hist = df_hist.reset_index()
+
+            if isinstance(df_hist.columns, pd.MultiIndex):
+                df_hist.columns = [col[0] for col in df_hist.columns]
+
+            df_hist = df_hist[["Date", "Close"]].rename(
+                columns={"Date": "fecha", "Close": "valor_accion"}
+            )
+            df_hist["accion"] = accion
+            df_hist["ticker"] = ticker
+            df_hist["divisa"] = divisa
+
+            insertar_historico_cotizaciones_en_bd(df_hist)
+            logger.info(
+                "Histórico insertado para '%s' (%s): %d registros",
+                accion, ticker, len(df_hist),
+            )
+
+        except Exception:
+            logger.exception(
+                "Error obteniendo/insertando histórico de '%s' (%s), se continúa con la siguiente",
+                accion, ticker,
+            )
