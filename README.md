@@ -16,7 +16,7 @@ El flujo de ejecución del proyecto es el siguiente:
 2. Carga de datos de ventas
 3. Cálculo de posiciones abiertas
 4. Resumen de cartera por acción
-5. Asignación de tickers desde un JSON
+5. Asignación de tickers desde la tabla `info_acciones_base` en base de datos
 6. Obtención de precios actuales
 7. Cálculo de rendimiento y ganancia
 8. Impresión de resultados
@@ -114,16 +114,7 @@ El script mostrará un resumen de la cartera y almacenará las posiciones abiert
 
 ## 🏷️ Tickers
 
-Los tickers se asignan mediante un archivo JSON que mapea nombres de acciones a tickers.
-
-Ejemplo:
-
-```json
-{
-  "Diageo": "DEO",
-  "BATS": "BTI"
-}
-```
+Los tickers se asignan consultando la tabla `info_acciones_base` en base de datos, que mapea el nombre de cada acción a su ticker (columnas `accion`, `ticker`).
 
 ---
 
