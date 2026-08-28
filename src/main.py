@@ -1,7 +1,12 @@
 import sys
 
 from services.metal_manager import procesado_metales_completo
-from services.wallet_manager import procesado_cartera_completo, detalle_operaciones_por_accion, procesado_historico_cartera_completo
+from services.wallet_manager import (
+    procesado_cartera_completo,
+    detalle_operaciones_por_accion,
+    procesado_historico_cartera_completo,
+    procesado_historico_cartera_por_accion_completo,
+)
 from services.price_manager import procesado_tipos_cambio_completo, procesado_historico_cotizaciones_completo
 from logger import get_logger
 
@@ -15,6 +20,7 @@ def mostrar_menu():
     logger.info("4. Obtener tipos de cambio")
     logger.info("5. Obtener histórico cotizaciones")
     logger.info("6. Calcular histórico de cartera")
+    logger.info("7. Calcular histórico de cartera por acción")
     logger.info("0. Salir")
 
 
@@ -40,6 +46,9 @@ def main() -> int:
             procesado_historico_cotizaciones_completo()
         elif opcion == "6":
             procesado_historico_cartera_completo()
+        elif opcion == "7":
+            nombre_accion = input("Introduce el nombre de la acción: ").strip()
+            procesado_historico_cartera_por_accion_completo(nombre_accion)
         elif opcion == "0":
             logger.info("Saliendo del programa")
             break

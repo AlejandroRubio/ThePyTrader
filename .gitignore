@@ -9,3 +9,33 @@ __pycache__/
 
 # Logs
 *.log
+
+# PyInstaller / empaquetado
+build/
+dist/
+*.exe
+*.manifest
+*.pkg
+
+# Entornos virtuales
+.venv/
+env/
+ENV/
+
+# IDE / editor
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# Sistema operativo
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Datos y credenciales locales
+.env
+*.env
+datasets/

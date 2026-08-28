@@ -721,13 +721,54 @@ def _calcular_serie_valorado(
     return total
 
 
-def calcular_historico_cartera() -> pd.DataFrame:
+def _filtrar_por_accion(
+    compras: pd.DataFrame, ventas: pd.DataFrame, cotizaciones: pd.DataFrame, accion: str
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, str | None]:
+    """
+    Filtra compras, ventas y cotizaciones a una única acción (comparación sin
+    distinguir mayúsculas/minúsculas ni espacios, igual que en
+    `detalle_operaciones_por_accion`).
+
+    Devuelve los tres DataFrames filtrados y el nombre "real" de la acción tal
+    como aparece en los datos (o None si no se encuentra ninguna operación).
+    Las cotizaciones filtradas se renombran a ese nombre real, de forma que
+    encajen exactamente con el usado en `compras`/`ventas` para el resto del
+    algoritmo (que empareja por igualdad exacta de `accion`).
+    """
+    nombre_normalizado = accion.strip().casefold()
+
+    mask_compras = compras["accion"].str.strip().str.casefold() == nombre_normalizado
+    mask_ventas = ventas["accion"].str.strip().str.casefold() == nombre_normalizado
+
+    compras_accion = compras[mask_compras]
+    ventas_accion = ventas[mask_ventas]
+
+    if compras_accion.empty and ventas_accion.empty:
+        return compras_accion, ventas_accion, cotizaciones.iloc[0:0], None
+
+    accion_real = (
+        compras_accion["accion"].iloc[0] if not compras_accion.empty else ventas_accion["accion"].iloc[0]
+    )
+
+    cotizaciones_accion = cotizaciones[
+        cotizaciones["accion"].str.strip().str.casefold() == nombre_normalizado
+    ].copy()
+    cotizaciones_accion["accion"] = accion_real
+
+    return compras_accion, ventas_accion, cotizaciones_accion, accion_real
+
+
+def calcular_historico_cartera(accion: str | None = None) -> pd.DataFrame:
     """
     Calcula, para cada día desde COTIZACIONES_FECHA_INICIO hasta hoy:
     - total_invertido: coste de compra de las posiciones abiertas ese día
     - total_valorado: valor de mercado (cotización histórica) de esas posiciones
     - total_beneficio_liquidado: beneficio/pérdida acumulado de las ventas realizadas hasta ese día
     - total_beneficio_no_liquidado: total_valorado - total_invertido
+
+    Si se indica `accion`, el cálculo se restringe a esa acción (mismo
+    algoritmo, aplicado únicamente sobre sus compras/ventas/cotizaciones), y
+    el DataFrame resultante incluye además una columna `accion`.
     """
     compras = obtener_acciones_compras_euro_df()
     ventas = obtener_acciones_ventas_euro_df()
@@ -736,6 +777,13 @@ def calcular_historico_cartera() -> pd.DataFrame:
     if compras is None or ventas is None or cotizaciones is None:
         logger.error("No se pudieron obtener los datos necesarios. Abortando.")
         return pd.DataFrame()
+
+    accion_real = None
+    if accion is not None:
+        compras, ventas, cotizaciones, accion_real = _filtrar_por_accion(compras, ventas, cotizaciones, accion)
+        if accion_real is None:
+            logger.info("No hay operaciones registradas para la acción '%s'.", accion)
+            return pd.DataFrame()
 
     lotes, eventos = _construir_ledger_fifo(compras, ventas)
 
@@ -748,7 +796,7 @@ def calcular_historico_cartera() -> pd.DataFrame:
     total_valorado = _calcular_serie_valorado(lotes, eventos, cotizaciones, fechas)
     total_beneficio_no_liquidado = total_valorado - total_invertido
 
-    return pd.DataFrame(
+    resultado = pd.DataFrame(
         {
             "fecha": fechas,
             "total_invertido": total_invertido.values,
@@ -757,6 +805,11 @@ def calcular_historico_cartera() -> pd.DataFrame:
             "total_beneficio_no_liquidado": total_beneficio_no_liquidado.values,
         }
     )
+
+    if accion_real is not None:
+        resultado.insert(0, "accion", accion_real)
+
+    return resultado
 
 
 def insertar_historico_cartera_en_bd(df: pd.DataFrame):
@@ -783,6 +836,44 @@ def insertar_historico_cartera_en_bd(df: pd.DataFrame):
     logger.info("Insertados %d registros de histórico de cartera", len(df))
 
 
+def insertar_historico_cartera_por_accion_en_bd(df: pd.DataFrame, accion: str):
+    """
+    Inserta el histórico diario de rendimiento de una acción concreta en
+    dbo.historico_rendimientos_por_accion. Antes de insertar, elimina los
+    registros previos de esa misma acción (el resto de acciones ya calculadas
+    no se ven afectadas).
+    """
+
+    if df.empty:
+        logger.warning("No hay histórico que insertar para la acción '%s'", accion)
+        return
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM dbo.historico_rendimientos_por_accion WHERE accion = :accion"),
+            {"accion": accion},
+        )
+
+    df.to_sql(
+        name="historico_rendimientos_por_accion",
+        con=engine,
+        schema="dbo",
+        if_exists="append",
+        index=False,
+    )
+
+    logger.info("Insertados %d registros de histórico para la acción '%s'", len(df), accion)
+
+
 def procesado_historico_cartera_completo():
     historico = calcular_historico_cartera()
     insertar_historico_cartera_en_bd(historico)
+
+
+def procesado_historico_cartera_por_accion_completo(accion: str):
+    historico = calcular_historico_cartera(accion=accion.strip())
+    if historico.empty:
+        return
+
+    accion_real = historico["accion"].iloc[0]
+    insertar_historico_cartera_por_accion_en_bd(historico, accion_real)

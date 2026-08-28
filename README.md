@@ -77,6 +77,17 @@ El flujo de ejecución de esta opción es el siguiente:
 
 ---
 
+## 📉 Funcionalidad 7: Calcular histórico de cartera por acción
+
+Misma lógica que la Funcionalidad 6, pero restringida a una única acción indicada por el usuario. El flujo de ejecución de esta opción es el siguiente:
+
+1. Solicitud al usuario del nombre de la acción
+2. Filtrado de compras, ventas y cotizaciones históricas a esa acción (reutilizando el mismo algoritmo FIFO y de cálculo de series diarias que la Funcionalidad 6)
+3. Cálculo, día a día desde `COTIZACIONES_FECHA_INICIO` hasta hoy, de la inversión, valoración y beneficio (realizado y no realizado) de esa acción
+4. Eliminación de los registros previos de esa acción e inserción del nuevo histórico en la tabla `historico_rendimientos_por_accion` (el resto de acciones ya calculadas no se ven afectadas)
+
+---
+
 ## 🧱 Estructura del proyecto
 
 ```
@@ -161,6 +172,7 @@ Tablas base:
 - historico_tipos_cambio — histórico diario de tipos de cambio EUR → divisa
 - historico_cotizaciones_acciones — histórico diario de cotización de cada acción
 - historico_rendimientos — histórico diario de inversión, valoración y beneficio (realizado y no realizado) de la cartera
+- historico_rendimientos_por_accion — mismo histórico diario que `historico_rendimientos`, desglosado por acción
 - info_acciones_base — mapeo de cada acción a su ticker de mercado
 - info_acciones_tipologia — clasificación de cada acción (sector, subsector, país y estrategia)
 
