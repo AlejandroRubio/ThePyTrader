@@ -380,6 +380,59 @@ def insertar_posiciones_abiertas(df: pd.DataFrame):
     )
 
 
+def calcular_posiciones_cerradas(df_compras: pd.DataFrame, df_ventas: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcula, aplicando FIFO por (accion, broker), los lotes de compra ya
+    vendidos (total o parcialmente), cruzando cada venta con el/los lotes de
+    compra que cubre.
+
+    Devuelve un DataFrame con una fila por cada cruce compra/venta:
+    - id: id del lote de origen en acciones_compras
+    - accion, numero_acciones, fecha_compra, valor_compra, comision_compra, total_compra
+    - fecha_venta, valor_venta, comision_venta, total_venta
+    - total_beneficio_bruto: (total_venta - total_compra), sin restar comisiones
+    - total_beneficio_neto: total_beneficio_bruto menos comisiones de compra y venta
+    """
+    _, eventos = _construir_ledger_fifo(df_compras, df_ventas)
+
+    cerradas = eventos.rename(columns={"id_compra": "id", "acciones": "numero_acciones"})
+
+    cerradas["total_compra"] = cerradas["numero_acciones"] * cerradas["valor_compra"]
+    cerradas["total_venta"] = cerradas["numero_acciones"] * cerradas["valor_venta"]
+    cerradas["total_beneficio_bruto"] = cerradas["total_venta"] - cerradas["total_compra"]
+    cerradas["total_beneficio_neto"] = (
+        cerradas["total_beneficio_bruto"] - cerradas["comision_compra"] - cerradas["comision_venta"]
+    )
+
+    return cerradas[
+        [
+            "id", "accion", "numero_acciones", "fecha_compra", "valor_compra", "comision_compra",
+            "total_compra", "fecha_venta", "valor_venta", "comision_venta", "total_venta",
+            "total_beneficio_bruto", "total_beneficio_neto",
+        ]
+    ]
+
+
+def insertar_posiciones_cerradas(df: pd.DataFrame):
+    """
+    Inserta un DataFrame en la tabla dbo.posiciones_cerradas usando SQLAlchemy.
+    Vacía la tabla antes de insertar.
+    """
+
+    # 1️⃣ Vaciar la tabla
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM dbo.posiciones_cerradas"))
+
+  
+    df.to_sql(
+        name="posiciones_cerradas",
+        con=engine,
+        schema="dbo",
+        if_exists="append",
+        index=False,
+    )
+
+
 def detalle_operaciones_por_accion(nombre_accion: str, broker: str) -> None:
     """
     Muestra el detalle FIFO de las ventas de una acción en un broker concreto,
@@ -494,6 +547,11 @@ def procesado_cartera_completo():
     # Paso 6: Inserción BD posiciones abiertas
     insertar_posiciones_abiertas(df_final)
 
+    # Paso 7: Cálculo e inserción BD posiciones cerradas (lotes ya vendidos, FIFO)
+    posiciones_cerradas = calcular_posiciones_cerradas(compras, ventas)
+    posiciones_cerradas = eliminar_acciones(posiciones_cerradas, ACCIONES_EXCLUIDAS)
+    insertar_posiciones_cerradas(posiciones_cerradas)
+
 
 def obtener_acciones_compras_euro_df() -> pd.DataFrame | None:
     """
@@ -564,8 +622,8 @@ def _construir_ledger_fifo(df_compras: pd.DataFrame, df_ventas: pd.DataFrame):
     compras["acciones_restantes"] = compras["numero_acciones"]
 
     lotes = compras[
-        ["lote_id", "accion", "broker", "fecha", "numero_acciones", "valor_accion", "comision"]
-    ].rename(columns={"fecha": "fecha_compra"})
+        ["lote_id", "id", "accion", "broker", "fecha", "numero_acciones", "valor_accion", "comision"]
+    ].rename(columns={"fecha": "fecha_compra", "id": "id_compra"})
 
     eventos = []
 
@@ -593,6 +651,7 @@ def _construir_ledger_fifo(df_compras: pd.DataFrame, df_ventas: pd.DataFrame):
                         "accion": accion,
                         "broker": broker,
                         "lote_id": compras.at[idx, "lote_id"],
+                        "id_compra": compras.at[idx, "id"],
                         "fecha_compra": compras.at[idx, "fecha"],
                         "valor_compra": compras.at[idx, "valor_accion"],
                         "fecha_venta": venta["fecha"],
@@ -609,7 +668,7 @@ def _construir_ledger_fifo(df_compras: pd.DataFrame, df_ventas: pd.DataFrame):
     eventos_consumo = pd.DataFrame(
         eventos,
         columns=[
-            "accion", "broker", "lote_id", "fecha_compra", "valor_compra",
+            "accion", "broker", "lote_id", "id_compra", "fecha_compra", "valor_compra",
             "fecha_venta", "valor_venta", "acciones", "comision_compra", "comision_venta",
         ],
     )
