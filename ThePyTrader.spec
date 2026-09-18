@@ -4,8 +4,9 @@ from PyInstaller.utils.hooks import collect_all
 
 datas, binaries, hiddenimports = [], [], ["pyodbc"]
 
-# yfinance y su stack traen datos/binarios que PyInstaller no detecta solo
-for pkg in ("yfinance", "curl_cffi", "peewee"):
+# yfinance y su stack traen datos/binarios que PyInstaller no detecta solo.
+# 'certifi' incluye el bundle de CAs que curl_cffi necesita para HTTPS.
+for pkg in ("yfinance", "curl_cffi", "peewee", "certifi"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

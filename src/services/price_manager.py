@@ -67,7 +67,7 @@ def obtener_ultimos_precios_cartera(
         period="5d",
         interval="1d",
         group_by="ticker",
-        threads=True,
+        threads=False,  # evita 'database is locked' en la caché SQLite de yfinance
         progress=False,
         auto_adjust=True  # suele dar menos problemas con Yahoo
     )

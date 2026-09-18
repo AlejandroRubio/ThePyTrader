@@ -1,3 +1,4 @@
+import runtime_setup  # noqa: F401  (redirige cachés de yfinance; debe ir primero)
 import sys
 
 from services.metal_manager import procesado_metales_completo
